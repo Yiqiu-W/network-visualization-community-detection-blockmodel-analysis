@@ -1,5 +1,3 @@
-# The assignment of Yiqiu Wang
-
 # The data sets used: "alliance_v4.1_by_dyad.csv" from Formal Alliances (v4.1) and "NMC-60-abridged.csv" from National Material Capabilities (v6.0)
 # on https://correlatesofwar.org/data-sets.
 
@@ -13,8 +11,8 @@ library(ggplot2)
 library(kableExtra)
 library(network)
 # Load the datasets
-alliance <- read.csv(file = "C:/Users/wangy/Documents/SNA3lab/version4.1_csv/version4.1_csv/alliance_v4.1_by_dyad.csv")
-power <- read.csv(file=  "C:/Users/wangy/Documents/SNA3lab/NMC_Documentation-6.0/NMC-60-abridged/NMC-60-abridged.csv")
+alliance <- read.csv(file = "yourwd/alliance_v4.1_by_dyad.csv")
+power <- read.csv(file=  "yourwd/NMC-60-abridged.csv")
 
 # Filter all the alliances forged between 1816 to 1836(20 years)
 alliance <- alliance[order(alliance$dyad_st_year),] |> 
