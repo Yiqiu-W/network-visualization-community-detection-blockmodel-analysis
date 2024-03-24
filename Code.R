@@ -10,7 +10,7 @@ library(igraph)
 library(ggplot2)
 library(kableExtra)
 library(network)
-# Load the datasets
+## Load the datasets
 alliance <- read.csv(file = "yourwd/alliance_v4.1_by_dyad.csv")
 power <- read.csv(file=  "yourwd/NMC-60-abridged.csv")
 
