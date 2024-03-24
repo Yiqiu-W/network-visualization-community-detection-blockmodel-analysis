@@ -1,0 +1,306 @@
+---
+title: "Assignment_2_by_Yiqiu_Wang"
+author: "Yiqiu Wang"
+date: "2023-02-14"
+header-includes:
+    - \usepackage{setspace}\doublespacing
+    - \usepackage{float}
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE, warning = FALSE,message = FALSE,fig.align = "center", dev = "cairo_pdf", fig.pos = "H",fig.width=10,fig.height = 6) 
+rm(list=ls())
+library(tidyverse)
+library(sna) 
+library(igraph)
+library(ggplot2)
+library(kableExtra)
+library(network)
+```
+The data sets used: "alliance_v4.1_by_dyad.csv" from Formal Alliances (v4.1) and "NMC-60-abridged.csv" from National Material Capabilities (v6.0) on https://correlatesofwar.org/data-sets.
+```{r,include=FALSE}
+# Load the datasets
+alliance <- read.csv(file = "C:/Users/wangy/Documents/SNA3lab/version4.1_csv/version4.1_csv/alliance_v4.1_by_dyad.csv")
+power <- read.csv(file=  "C:/Users/wangy/Documents/SNA3lab/NMC_Documentation-6.0/NMC-60-abridged/NMC-60-abridged.csv")
+
+# Filter all the alliances forged between 1816 to 1836(20 years)
+alliance <- alliance[order(alliance$dyad_st_year),] |> 
+  filter(1815 < dyad_st_year & dyad_st_year < 1837, 
+         asymmetric == 0) # terms applies to both states
+# Create a data frame containing information about edges based on the new alliance data frame
+edges <- alliance |> 
+  select(state_name1,state_name2) 
+# Check how many and which countires we got
+# table(edges$state_name1)
+# table(edges$state_name2)
+
+# Filter the power data frame
+# limite age(1816-1836) and countries(19 based on table() in the last step) 
+# We focus on "milper"(Military Personnel (thousands)) here
+power <- power[order(power$year),] |> 
+  filter(1815 < year & year < 1837,
+         stateabb == "AUH"|stateabb == "BAD"|stateabb == "FRN"|stateabb == "GMY"|stateabb == "HSE"|stateabb == "HSG"|stateabb == "ITA"|stateabb == "POR"|stateabb == "RUS"|stateabb == "SAX"|stateabb == "SPN"|stateabb == "SWD"|stateabb == "TUR"|stateabb == "TUS"|stateabb == "SIC"|stateabb == "WRT"| stateabb == "BAV"|stateabb == "NTH"|stateabb == "UKG") |> 
+  select(stateabb,year,milper,irst)
+# Change the state names in edges. Use state abbreviations for simplification(as Power contains only state abbreviations)
+edges <- edges |> 
+   mutate(state_name1 = case_when(state_name1 == "Austria-Hungary" ~ "AUH",
+                   state_name1 == "Baden" ~ "BAD",
+                   state_name1 == "France" ~ "FRN",
+                   state_name1 == "Germany" ~ "GMY",
+                   state_name1 == "Hesse Electoral"~ "HSE" ,
+                   state_name1 == "Hesse Grand Ducal" ~ "HSG",
+                   state_name1 == "Italy"~ "ITA" ,
+                   state_name1 == "Portugal" ~ "POR",
+                   state_name1 == "Russia" ~ "RUS",
+                   state_name1 == "Saxony"~ "SAX", 
+                   state_name1 == "Spain" ~ "SPN",
+                   state_name1 == "Sweden" ~ "SWD",
+                   state_name1 == "Turkey" ~ "TUR",
+                   state_name1 == "Tuscany" ~ "TUS",
+                   state_name1 == "Two Sicilies" ~ "SIC",
+                   state_name1 == "Wuerttemburg" ~ "WRT",
+                   state_name1 == "Bavaria" ~ "BAV",
+                   state_name1 == "Netherlands" ~ "NTH",
+                   TRUE ~ "UKG"),
+         state_name2 = case_when(state_name2 == "Austria-Hungary" ~ "AUH",
+                   state_name2 == "Baden" ~ "BAD",
+                   state_name2 == "France" ~ "FRN",
+                   state_name2 == "Germany" ~ "GMY",
+                   state_name2 == "Hesse Electoral"~ "HSE" ,
+                   state_name2 == "Hesse Grand Ducal" ~ "HSG",
+                   state_name2 == "Italy"~ "ITA" ,
+                   state_name2 == "Portugal" ~ "POR",
+                   state_name2 == "Russia" ~ "RUS",
+                   state_name2 == "Saxony"~ "SAX", 
+                   state_name2 == "Spain" ~ "SPN",
+                   state_name2 == "Sweden" ~ "SWD",
+                   state_name2 == "Turkey" ~ "TUR",
+                   state_name2 == "Tuscany" ~ "TUS",
+                   state_name2 == "Two Sicilies" ~ "SIC",
+                   state_name2 == "Wuerttemburg" ~ "WRT",
+                   state_name2 == "Bavaria" ~ "BAV",
+                   state_name2 == "Netherlands" ~ "NTH",
+                   TRUE ~ "UKG"))
+
+# Replace all values in power that equals to -9 with NA as suggested by the codebook
+power <- transform(power, milper = ifelse(milper == -9, NA, milper))
+power <- transform(power, irst = ifelse(irst == -9, NA, irst))
+# Check the change in military personnel and iron & steel production of each country in 1816-1836
+#ggplot(power,mapping = aes(x = year, y = milper))+
+#  geom_point(mapping = aes(color = stateabb)) +
+# labs(
+#   title = "Military personnel of each country(1816-1836)",
+#   x = "year",
+#   y = "thousands",
+#   color = "country",
+# )
+#ggplot(power,mapping = aes(x = year, y = irst))+
+# geom_point(mapping = aes(color = stateabb)) +
+#   labs(
+#   title = "Iron and steel production (1816-1836)",
+#   x = "year",
+#   y = "thousands of tons",
+#   color = "country",
+# )
+# store the average military personnel in a column named "avg_milper"
+# Store the average Iron and steel production(thousands of tons) in a column named "avg_irst"
+# This new data frame will contain information on nodes(countries in our case)
+nodes <- power |> 
+  group_by(stateabb) |>  
+  summarise(avg_milper = round(mean(milper,na.rm = TRUE,1)),
+            avg_irst = round(mean(irst,na.rm = TRUE),1))
+
+# Check that there are no duplicated subjects
+length(unique(nodes$stateabb)) == nrow(nodes)
+# Check there is no duplicated tie
+any(duplicated(edges))
+# Make sure the two sides of all the alliance are in our node set
+all(edges$state_name1 %in% nodes$stateabb)
+all(edges$state_name2 %in% nodes$stateabb)
+```
+
+# 1 Formulate theoretical arguments and expectations about interstate relations. Think in network terms. Select the appropriate part of the data for analysis.
+Answers:
+
+|     It is easier for countries to forge alliances with other countries that are of the same level of power with them. Powerful countries forge alliances with each other so as to avoid large scales of wars between them. Less powerful countries in general are less attractive to powerful countries so they should be more likely to stick together to protect each other when powerful countries invade one of them. So we expect to see homophily in terms of national power. However, once it becomes possible for one less powerful country to connect with powerful countries, this country along with its less powerful allies, connect with the same powerful countries. Since powerful countries have the tendency to be allies, less powerful countries connected with one powerful country then become allies with other powerful countries. We expect powerful countries to have higher density in the network. 
+
+|     The historical period covered here is 1816-1836. In 1814 and 1815, the Congress of Vienna was held. The aim was not simply to restore old boundaries, but to resize the main powers so they could balance each other and remain at peace, being at the same time shepherds for the smaller powers. In this sense, we expect less powerful countries were granted the chance to become allies of powerful countries.  
+
+|     When we talk about "power" here, it is worth noting that the concept of "power" of a country could be measured from different perspectives. Here we focus on military personnel(thousands) and iron and steel production (thousands of tons). The Industrial Revolution occurred during about 1760 to about 1820-1840 dramatically increased the production of iron and steel in some countries. The problem is that, a country which was powerful in terms of military personnel was not necessarily a country which was powerful in terms of production of iron and steel. We expect that, powerful countries with great number of military personnel would stick together while powerful countries with great capacity of producing iron and steel would stick together. At the same time, less powerful countries which gained power mainly through conscription instead of iron and steel production would forge alliances with "military powerful" countries other than "production powerful" countries. That is, countries that shared the same belief of the concept of "power" were more likely to become allies. So we also expect to see segregation between the two types of countries.
+
+|     So, in this study, we focus on alliances forged between 1816-1836, a twenty-year period after the Congress of Vienna as well as data on military personel and production of iron and steel of each country in the twenty years. The data sets used are Formal Alliances (v4.1) and National Material Capabilities (v6.0) from https://correlatesofwar.org/data-sets.
+
+
+# 2 On the selected data, make a table that contains descriptive network statistics for the network and for key node-level variables.
+```{r}
+# Conversion to igraph format
+grph <- graph.edgelist(as.matrix(edges),directed = FALSE)
+# number of nodes and ties
+n_n <- vcount(grph) 
+n_t <- ecount(grph) 
+# average degree
+mean_deg <- mean(degree(grph,mode='in')) |> 
+  round(4)# the network is undirected as it only shows two countries that
+                             # forged an alliance together without a specific issuers
+# Standard deviations
+sd <- sd(degree(grph,mode='in')) |> 
+  round(4)
+# density
+den <- edge_density(grph) |> 
+  round(4)
+# reciprocity
+rec <-reciprocity(grph)
+# transitivity
+tran <- transitivity(grph) |> 
+  round(4)
+# average path length
+pathleg <- average.path.length(grph) |> 
+  round(4)
+# isolates
+n_iso <- sum(degree(grph) == 0) 
+# components
+n_com <- components(grph)$no 
+# Assortativity(degree)
+as <- assortativity.degree(grph) |> 
+  round(4)
+# which has the highest degree
+max_deg <- V(grph)$name[degree(grph)==max(degree(grph))] 
+# which has the highest betweenness centrality
+max_betw <- V(grph)$name[betweenness(grph)==max(betweenness(grph))] 
+
+df <- data.frame("Object" = c("Historical period covered","Major events","Nature of tie(s)","Number of nodes","Number of ties","Direction of ties","Average degree","Standard deviations","Density","Reciprocity","Transitivity","Average path length","Number of isolates","Number of components","Assortativity(degree)","Node with the highest degree","Node with the highest betweenness centrality"),
+                 "Index" = c("1816-1836","The Congress of Vienna & The Industrial Revolution","Alliances between countries",n_n,n_t,"Undirected",mean_deg,sd,den,rec,tran,pathleg,n_iso,n_com,as,max_deg,max_betw))
+kable(df,format = "latex", caption = "Descriptive statistics of alliance network(1816-1836)", align = "c") |> 
+  add_footnote("Data source: Formal Alliances (v4.1) & National Material Capabilities (v6.0)") |> 
+  kable_styling(bootstrap_options = "striped", 
+                full_width = FALSE, 
+                position = "center",
+                latex_options = "hold_position")
+```
+Answers:
+
+|     Table 1 shows the descriptive statistics of alliance network(1816-1836).
+
+|     A total of 19 countries forged 59 alliances including mutual defense pacts, non-aggression treaties, and ententes. All ties are mutual as all the terms applied to both contries, so the network is undirected with reciprocity equals to 1. The average degree indicates that for each country, there were on average 6 alliances forged. This could possibly be the results of all countries forged similar numbers of alliances regardless of their power levels or countries of similar power level forged many alliances while countries of different power level forged few alliances in the twenty years of time. The density of the network is 0.345 which suggests the network was not well-connected and countries had certain standards which they used to judge another country before they decide whether to be an ally of another country or not. The transitivity is relatively high which suggests there exists group of nodes that are densely connected internally.
+
+|     The average path length is calculated based on the number of steps of the shortest paths bteween two nodes in the network. In general a country could reach another country through one of its allies which is also an ally of the other country.
+
+|     The network is a single conponent with no isolates. The assortativity(degree) is positive which means countries with many allies had the tendency to become allies.
+
+|     Austria-Hungary is the country(node) that has the highest degree and betweenness centrality in the alliance network. Austria-Hungary seems to be the most popular ally at that time and served as a "broker" in the network which means that, to reach another country or to be an indirect ally of another country, it is very likely that a country needed to be the ally of Austria-Hungary first.
+
+
+# 3 Visualize the network.
+```{r}
+# Match the names in the graph with the names(stateabb) in nodes
+# Add nodes' attributes(average military personal)
+V(grph)$avg_milper <- nodes[match(V(grph)$name,nodes$stateabb),]$avg_milper
+V(grph)$avg_irst <- nodes[match(V(grph)$name,nodes$stateabb),]$avg_irst
+# Plot
+# Let the size of vertex be based on avg_milper
+# Use sqrt() and +1 here to make the graph clearer(use V(grph)$avg_milper directly would make the plot messy)
+plot.igraph(grph,
+            vertex.label= V(grph)$name,vertex.size= sqrt(V(grph)$avg_milper)+1,vertex.color = ifelse(V(grph)$avg_irst  == 0,"red",ifelse(V(grph)$avg_irst <=  50, "grey",ifelse(V(grph)$avg_irst <= 100,"green",ifelse(V(grph)$avg_irst <= 150,"darkgreen",ifelse(V(grph)$avg_irst <= 200,"lightblue",ifelse(V(grph)$avg_irst <= 250,"blue","purple")))))),
+            edge.color='darkgrey',edge.arrow.size=.02,
+            vertex.label.cex = 0.7,
+            layout=layout_with_kk(grph),
+            main='Graph 1: Alliances forged between 1816-1836
+            (Vertex size based on average military personal)')
+legend("left", legend = c('0','<=50','<=100','<=150','<=200','<=250','>250'), 
+       pch=21, pt.bg=c("red","grey","green","darkgreen","lightblue","blue","purple"),title = "Iron and steel
+       production
+       (thousands of tons)",cex = 0.5)
+```
+Answers:
+
+|     In Graph 1, RUS(Russia) & GMY(Germany) & AUH(Austria-Hungary) were all powerful contries in terms of military personnel and were strong allies of each other. The top right part shows that six less powerful countries were very well connected with each other and at the same time forged alliances with AUH and GMY, but not with RUS. Besides AUH and GMY, RUS only forged alliances with TUR(Turkey), a country powerful in military personel but not iron and steel production, UKG(The United Kingdom) and FRN(France), two countries powerful in both military personnel and iron and steel production. Other less powerful countries had the tendency to become allies of only one powerful country in general but alliances between these less powerful countries is scarce.
+
+
+# 4 Implement and compare the results (community compositions, their size) of two different community detection algorithms to find communities (e.g., Girvan-Newman, Louvain, walktrap, cohesive blocks, Leiden).Create a plot where nodes are either colored based on their membership, or you mark the groups with some color in the background.
+```{r}
+par(mfrow=c(1,2))
+lay <- layout_with_fr(grph)
+
+# GIRVAN-NEWMAN
+plot(grph,
+     vertex.label.cex = 0.5,
+     main='Girvan-Newman',
+     mark.groups = cluster_edge_betweenness(grph),
+     layout = lay)
+
+# Walktrap
+plot(grph,
+     vertex.label.cex = 0.5,
+     main='Walktrap',
+     mark.groups = cluster_walktrap(grph,step=5),
+     layout = lay)
+```
+Answers:
+
+|     The theory of Girvan-Newman community detection is that edges with high betweenness are those that separate communities. So only well connected nodes can be viewed as members of one community. We could find that the edge between SWD(Sweden) and UKG(The United Kingdom) is the only path which SWd could use to further communicate with other countries(nodes) in the network. So this edge made SWD a single community. None of the edges between POR(Portugal), FRN(France) and UKG(The United Kingdom) is "the only path",so they all have low betweenness. But the edges between SWD & UKG, SPN(Spain) & UKG, GMY(Germany) & UKG, AUH(Austria-Hungary) & UKG, RUS(Russia) & UKG and RUS & FRN all have high betweenness and made POR & UKG & FRN one community. Combined with Graph 1, we can see that powerful countries are divided into two communities while a less powerful country, if not an ally of other less powerful countries, is viewed as a community itself even if it is an ally of a powerful country. RUS & GMY & AUH forged great amount of alliances during 20 years and thus are the members of the same community. Although UKG was also an ally of the three countries, their relationship is relatively weak(not tightly connected) compared with that between the three countries so UKG is not a member in this community.  
+
+|     The idea of Walktrap community detection is that if random walks are to be performed in a network, short random walks tend to stay in the same community because the nodes in a community should be densely connected and the number of ties for exiting the community is limited. We specify the length of random walk to be 5 steps here. Compared with the graph on the left(Girvan-Newman), we find the POR & UKG & FRN community has a new member SWD which is an ally of only UKG and the RUS & GMY & AUH community has two new members TUR(Turkey), an ally of only RUS, and TUS(Tuscany), an ally of only AUH. Other communities stays the same. So all the countries which is viewed as a community itself in the graph on the left are now included in the larger communities which they are connected to.
+
+|     Although the number of members of the two communities is different in Girvan-Newman graph and Walktrap graph. RUS & GMY & AUH and POR & UKG & FRN remained stable. That is, as we expected, "military powerful" countries had the tendency to stick together and this is the same case for "production powerful" countries. POR is not powerful in military personnel or iron and steel production, but is connected with both UKG and FRN and is considered a member of this community.
+
+
+# 5 Try doing a tentative blockmodel analysis using structural equivalence. You may choose the number of roles as you see fit. Interpret your results.
+```{r}
+# Convert grph to matrix format
+mtx <- as.matrix(get.adjacency(grph))
+# Convert matrix to network
+net <- as.network(mtx, directed=FALSE)
+
+gplot(net,displaylabels = TRUE, arrowhead.cex = FALSE)
+
+# Structural dissimilarity
+SE_dist <- sedist(net)
+SE_dist
+
+# Cluster Dendrogram
+net_clustering <- equiv.clust(net,
+	equiv.fun="sedist",cluster.method='complete')
+plot(net_clustering)
+```
+Answers:
+
+|     The matrix shows the hamming distances of alliances forged in the alliance network. The hamming distance here shows the number of allies two countries did not share. The higher this number in the matrix is, the less allies two countries share and the less structurally equivalent two countries are.
+
+|     Based on the Cluster Dendrogram, we can see that 6(BAD,Baden), 4(BAV,Bavaria), 7(SAX,Saxony), 8(WRT,Wuerttemburg), 9(HSE,Hesse Electora), 10(HSG,Hesse Grand Ducal) are perfectly structurally equivalent. That is, these six countries in the graph above had exactly the same allies(each other and AUH & GMY). This is the same case for 12(SIC,Two Sicilies) and 18(ITA,Italy). 11(AUH) is unique. There are additional sets of countries that are very equivalent. They share part of their allies.
+
+```{r}
+# Try partition with 4 positions
+se.blockmodel.A <- blockmodel(net, net_clustering, k=4)
+# Matching block membership information with the original data set
+se.position.A <- 1+se.blockmodel.A$block.membership[match(1:nrow(mtx),se.blockmodel.A$order.vector)]
+# Plot(color based on membership)
+gplot(net, vertex.col=se.position.A,displaylabels = TRUE, arrowhead.cex = FALSE)
+# Blockmodel
+plot(se.blockmodel.A)
+```
+Answers:
+
+|     P1 consists of only AUH, P2-P2 and P3-P3 are completely filled with ties(complete blocks). P2-P4 and P4-P2 are empty(null blocks). The remaining are regular blocks.
+
+|     AUH is the ally of 12 countries which suggests it is the most connected country among all 19 countries in the network. This makes sense as Vienna, where the Congress of Vienna was held is in Austria-Hungary which made this country a leader in alliances forging. We find strong connections between the 7 countries in the GMY~BAD block as they are fully connected with each other but their connection with other countries are weak with only a few of them being allies of UKG and RUS but absolutely no alliance with the 9 countries in the TUS~SWD block, which makes these 7 countries a group. UKG and RUS were allies but the allies they shared is scarce so they formed a group as shown in the graph above. The rest of the countries, 9 countries in the TUS~SWD block are hardly connected with each other. They were more interested in becoming allies with powerful countries rather than other less powerful countries like them.
+
+
+# 6 Make meaningful comparisons between the results of community detection algorithms and of blockmodeling. Summarize the differences and similarities and try to explain these.
+
+Similarity: 
+
+|     The results of both community detection algorithms and of blockmodeling regard Baden(BAD), Bavaria(BAV), Saxony(SAX), Wuerttemburg(WRT), Hesse Electora(HSE) and Hesse Grand Ducal(HSG) as one group(community). In the Girvan-Newman graph, this is because all these countries were allies of each other and the edges then have low betweeness. In the block model, this is because the strong connection between these countries are recognized. Besides forging alliances with powerful countries like Austria-Hungary and Germany, these less powerful countries became allies so that they are tightly connected with each other.
+
+Difference:
+
+|1.    When using Girvan-Newman community detection, less powerful countries which were only ally of only one powerful country(Sweden for example) is regard as a community itself. If two less powerful countries forged alliance and at the same time not strongly connected with other powerful countries(Italy and Two Sicilies for example), they are viewed as one community. But when using Walktrap community detection, the countries which was then a community itself becomes a member of a larger community owing to their connection with one of the members of that community. 
+
+|     This is not the case in the block model. In the block model, 7 countries which becomes a community itself or with another country in the Girvan-Newman graph, along with POR and FRN become members of the same group in the block model. There are only two complete blocks(GMY~BAD and UKG~RUS) which is regard as two communities in the block model. Taken away AUH, the remaining 9 countries had either no ties with the two communities or very weak ties with them. These 9 countries share the same property that they generally preferred becoming allies with powerful countries than other less powerful countries which different from the 7 countries in GMY~BAD block.
+
+|2.     RUS and UKG are always members of two different communities when we use different community detection algorithms. In the Girvan-Newman graph for example, this is because of high betweenness of the edge between RUS and UKG. The two communities consists of powerful countries in the Girvan-Newman graph and the Walktrap grph can be seen as a "military powerful" community(AUH & GMY & RUS) and a "production powerful" community(UKG & FRN). But in the block model, RUS and UKG are equivalent and are viewed as members of the same group(having the same role in the network).
+
+|3.      In both of the Girvan-Newman graph and Walktrap graph, AUH is not the only member in its community. But in the block model, AUH itself becomes a group. Its identity can be seen as the leader in the alliance forging which is different from all other countries in the network.
+
+
+
